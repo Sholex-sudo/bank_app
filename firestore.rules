@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == uid && request.resource.data.diff(resource.data).changedKeys().hasOnly(['phone','email']));
+    }
+
+    match /accounts/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      // Only Cloud Functions should write balances. Block direct client writes.
+      allow write: if false;
+    }
+
+    match /transactions/{id} {
+      allow read: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      // Only Cloud Function creates transactions
+      allow create, update, delete: if false;
+    }
+  }
+}
