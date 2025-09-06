@@ -1,29 +1,51 @@
 name: Android APK (Debug)
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
+
 jobs:
   build-debug-apk:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
+
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - name: Flutter pub get
-        run: flutter pub get
+
+      # 1) If no pubspec.yaml, create a fresh Flutter app scaffold
+      - name: Create Flutter project if missing
+        run: |
+          if [ ! -f pubspec.yaml ]; then
+            flutter create .
+          fi
+
+      # 2) Copy the starter files into the scaffold (overwrite lib/, add functions/, rules, etc.)
+      - name: Merge starter files
+        run: |
+          rsync -a --delete lib/ ./lib/ || true
+          [ -d functions ] && rsync -a functions/ ./functions/ || true
+          [ -f firestore.rules ] && cp firestore.rules ./firestore.rules || true
+
+      # 3) Add the dependencies from the snippet to pubspec.yaml
+      - name: Inject dependencies
+        run: |
+          awk '1;/^dependencies:/{print "  firebase_core: ^3.4.0\n  firebase_auth: ^5.3.0\n  cloud_firestore: ^5.4.2\n  cloud_functions: ^5.1.4\n  intl: ^0.19.0\n  provider: ^6.1.2";exit}' pubspec.yaml > pubspec.tmp.yaml
+          mv pubspec.tmp.yaml pubspec.yaml
+          flutter pub get
+
+      # 4) Build the APK
       - name: Build debug APK
         run: flutter build apk --debug
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+
+      # 5) Upload artifact
+      - uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
